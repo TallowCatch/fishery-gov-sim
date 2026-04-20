@@ -1,19 +1,25 @@
 \documentclass[11pt]{article}
 \usepackage[margin=1in]{geometry}
 \usepackage{graphicx}
+\usepackage{array}
 \usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{caption}
 \usepackage{hyperref}
-\usepackage{natbib}
+\usepackage[square,authoryear]{natbib}
 
-\title{Literature-Backed Institutional Commons Under Strategic Pressure}
-\author{Ameer Firas}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\captionsetup{font=small,justification=justified,singlelinecheck=false}
+
+\title{Institutional Robustness in Sequential Commons}
+\author{Ameer Alhashemi}
 \date{\today}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-This draft extends the Harvest Commons line toward a more policy-interpretable institutional design study. The paper keeps the same research focus---renewable commons, strategic pressure, and governance architecture---while adding literature-backed scenario archetypes, explicit oversight frictions, and LLM-generated strategy populations. The central question is which institutional arrangements remain robust under strategic noncompliance when oversight is imperfect and the underlying policy population is no longer restricted to hand-designed or search-based strategies.
+Renewable commons provide a controlled setting for comparing governance arrangements under strategic pressure. Earlier results in Fishery Commons show that central interventions can be ranked under repeated adversarial strategy injection, with adaptive quotas emerging as the strongest signal in the medium tier. Earlier results in Harvest Commons show that local-only, central-only, and hybrid governance differ under stronger search-based pressure, and that hybrid governance ranks first in the confirmatory architecture matrix. The present study re-evaluates Harvest under three literature-backed scenario archetypes and two oversight regimes that introduce imperfect detection, delayed enforcement, limited targeting capacity, and governance budget cost. The ranking of architectures varies across scenarios. Hybrid governance ranks first throughout the community-irrigation scenario and under ideal forest co-management, whereas top-down-only governance ranks first in constrained forest co-management and in the higher-pressure regulated-fishery setting. These results support a comparative reading of governance architecture in which rankings depend on scenario structure and implementation constraints.
 \end{abstract}
 
 \input{sections/introduction}
@@ -21,6 +27,7 @@ This draft extends the Harvest Commons line toward a more policy-interpretable i
 \input{sections/results}
 \input{sections/discussion}
 
+\clearpage
 \bibliographystyle{plainnat}
 \bibliography{refs}
 
