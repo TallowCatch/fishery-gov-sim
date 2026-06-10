@@ -17,6 +17,28 @@ _BASE_GOVERNMENT_PARAMS = {
 }
 
 
+_ACTOR_CAPABILITY_STAGE_FIELDS = {
+    "low_actor": {
+        "injector_mode": "mutation",
+        "adversarial_pressure": 0.3,
+        "search_candidates": 0,
+        "search_eval_horizon": 0,
+    },
+    "medium_actor": {
+        "injector_mode": "search_mutation",
+        "adversarial_pressure": 0.3,
+        "search_candidates": 6,
+        "search_eval_horizon": 30,
+    },
+    "high_actor": {
+        "injector_mode": "search_mutation",
+        "adversarial_pressure": 0.3,
+        "search_candidates": 12,
+        "search_eval_horizon": 60,
+    },
+}
+
+
 _STAGE_CONFIGS: dict[str, dict] = {
     "stage_a_llm_reliability": {
         "explicit_cells": [
@@ -255,6 +277,23 @@ _STAGE_CONFIGS: dict[str, dict] = {
         "plot_mode": "institutional",
         **_BASE_GOVERNMENT_PARAMS,
     },
+    "harvest_oversight_gap_stageA": {
+        "scenario_presets": ["community_irrigation", "forest_co_management"],
+        "actor_capability_levels": ["low_actor", "medium_actor", "high_actor"],
+        "overseer_capability_levels": ["strong_overseer", "limited_overseer", "weak_overseer"],
+        "conditions": ["none", "bottom_up_only", "top_down_only", "hybrid"],
+        "n_runs": "5",
+        "generations": "15",
+        "population_size": "6",
+        "seeds_per_generation": "32",
+        "test_seeds_per_generation": "32",
+        "replacement_fraction": "0.2",
+        "run_name": "harvest_oversight_gap_stageA",
+        "experiment_tag": "harvest_oversight_gap_stageA",
+        "summary_prefix": "results/runs/showcase/curated/harvest_oversight_gap_stageA",
+        "plot_mode": "institutional",
+        **_BASE_GOVERNMENT_PARAMS,
+    },
 }
 
 
@@ -272,6 +311,33 @@ def stage_cells(cfg: dict) -> list[dict[str, str]]:
     if "explicit_cells" in cfg:
         return [dict(cell) for cell in cfg["explicit_cells"]]
     scenario_presets = cfg.get("scenario_presets")
+    actor_capability_levels = cfg.get("actor_capability_levels")
+    overseer_capability_levels = cfg.get("overseer_capability_levels")
+    if scenario_presets and actor_capability_levels:
+        cells: list[dict[str, str]] = []
+        for scenario_preset, actor_capability_level, overseer_capability_level, condition in itertools.product(
+            scenario_presets,
+            actor_capability_levels,
+            overseer_capability_levels or [""],
+            cfg["conditions"],
+        ):
+            actor = _ACTOR_CAPABILITY_STAGE_FIELDS[str(actor_capability_level)]
+            cells.append(
+                {
+                    "scenario_preset": scenario_preset,
+                    "governance_friction_regime": "",
+                    "actor_capability_level": str(actor_capability_level),
+                    "overseer_capability_level": str(overseer_capability_level),
+                    "tier": "",
+                    "partner_mix": "",
+                    "condition": condition,
+                    "injector_mode": str(actor["injector_mode"]),
+                    "pressure": str(actor["adversarial_pressure"]),
+                    "search_candidates": int(actor["search_candidates"]),
+                    "search_eval_horizon": int(actor["search_eval_horizon"]),
+                }
+            )
+        return cells
     governance_friction_regimes = cfg.get("governance_friction_regimes", ["ideal"])
     if scenario_presets:
         cells: list[dict[str, str]] = []
@@ -318,6 +384,17 @@ def shard_slug(tier: str, partner_mix: str, condition: str, injector_mode: str, 
     return f"{tier}__{partner_mix}__{condition}__{injector_mode}__p{pressure}".replace(".", "p")
 
 
+def _cell_slug(cell: dict[str, str]) -> str:
+    parts = [
+        cell.get("scenario_preset") or cell.get("tier", ""),
+        cell.get("actor_capability_level") or cell.get("governance_friction_regime") or cell.get("partner_mix", ""),
+        cell.get("overseer_capability_level") or cell.get("injector_mode", ""),
+        cell.get("condition", ""),
+        f"p{cell.get('pressure', '')}",
+    ]
+    return "__".join(str(part) for part in parts if str(part)).replace(".", "p")
+
+
 def github_matrix_payload(stage: str) -> dict:
     cfg = stage_config(stage)
     include = []
@@ -325,13 +402,7 @@ def github_matrix_payload(stage: str) -> dict:
         include.append(
             {
                 **cell,
-                "slug": shard_slug(
-                    cell.get("scenario_preset") or cell["tier"],
-                    cell.get("governance_friction_regime") or cell["partner_mix"],
-                    cell["condition"],
-                    cell["injector_mode"],
-                    cell["pressure"],
-                ),
+                "slug": _cell_slug(cell),
                 "n_runs": int(cfg["n_runs"]),
                 "generations": int(cfg["generations"]),
                 "population_size": int(cfg["population_size"]),

@@ -11,6 +11,7 @@ on:
       - codex/harvest-institutional-regulated-fishery
       - codex/harvest-institutional-community-irrigation
       - codex/harvest-institutional-forest-co-management
+      - codex/harvest-oversight-gap-stagea
   workflow_dispatch:
     inputs:
       stage:
@@ -27,6 +28,7 @@ on:
           - institutional_friction_regulated_fishery
           - institutional_friction_community_irrigation
           - institutional_friction_forest_co_management
+          - harvest_oversight_gap_stageA
       python_version:
         description: "Python version"
         required: false
@@ -96,6 +98,7 @@ jobs:
               "institutional_friction_regulated_fishery",
               "institutional_friction_community_irrigation",
               "institutional_friction_forest_co_management",
+              "harvest_oversight_gap_stageA",
           }:
               payload = github_matrix_payload(stage)
               matrix = json.dumps(payload["matrix"])
@@ -134,7 +137,7 @@ jobs:
           print(f"ci_plot_filter={ci_plot_filter}")
           PY
         env:
-          STAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.stage || (github.ref_name == 'codex/harvest-remote-stagec' && 'stage_c_highpower' || github.ref_name == 'codex/harvest-architecture-stagec' && 'architecture_stageC' || github.ref_name == 'codex/harvest-capability-ladder-stageb' && 'capability_ladder_stageB' || github.ref_name == 'codex/harvest-institutional-regulated-fishery' && 'institutional_friction_regulated_fishery' || github.ref_name == 'codex/harvest-institutional-community-irrigation' && 'institutional_friction_community_irrigation' || github.ref_name == 'codex/harvest-institutional-forest-co-management' && 'institutional_friction_forest_co_management' || 'stage_b_pilot') }}
+          STAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.stage || (github.ref_name == 'codex/harvest-remote-stagec' && 'stage_c_highpower' || github.ref_name == 'codex/harvest-architecture-stagec' && 'architecture_stageC' || github.ref_name == 'codex/harvest-capability-ladder-stageb' && 'capability_ladder_stageB' || github.ref_name == 'codex/harvest-institutional-regulated-fishery' && 'institutional_friction_regulated_fishery' || github.ref_name == 'codex/harvest-institutional-community-irrigation' && 'institutional_friction_community_irrigation' || github.ref_name == 'codex/harvest-institutional-forest-co-management' && 'institutional_friction_forest_co_management' || github.ref_name == 'codex/harvest-oversight-gap-stagea' && 'harvest_oversight_gap_stageA' || 'stage_b_pilot') }}
 
   run-shards:
     needs: define-matrix
@@ -170,6 +173,10 @@ jobs:
             --injector-modes "${{ matrix.injector_mode }}" \
             --adversarial-pressures "${{ matrix.pressure }}" \
             --governance-friction-regimes "${{ matrix.governance_friction_regime }}" \
+            --actor-capability-levels "${{ matrix.actor_capability_level || '' }}" \
+            --overseer-capability-levels "${{ matrix.overseer_capability_level || '' }}" \
+            --search-candidates "${{ matrix.search_candidates || 0 }}" \
+            --search-eval-horizon "${{ matrix.search_eval_horizon || 0 }}" \
             --n-runs "${{ matrix.n_runs }}" \
             --generations "${{ matrix.generations }}" \
             --population-size "${{ matrix.population_size }}" \
@@ -250,11 +257,24 @@ jobs:
         run: |
           python -m experiments.plot_harvest_architecture_followup \
             --ranking-csv "${{ needs.define-matrix.outputs.summary_prefix }}_ranking.csv" \
+            --table-csv "${{ needs.define-matrix.outputs.summary_prefix }}_table.csv" \
             --contrast-ci-csv "${{ needs.define-matrix.outputs.summary_prefix }}_contrast_ci.csv" \
             --capability-ladder-csv "${{ needs.define-matrix.outputs.summary_prefix }}_capability_ladder.csv" \
             --aggression-summary-csv "${{ needs.define-matrix.outputs.summary_prefix }}_aggression_summary.csv" \
             --targeting-summary-csv "${{ needs.define-matrix.outputs.summary_prefix }}_targeting_summary.csv" \
             --output-prefix "${{ needs.define-matrix.outputs.summary_prefix }}"
+
+      - name: Extract oversight case trace
+        if: ${{ needs.define-matrix.outputs.plot_mode == 'institutional' }}
+        env:
+          MPLCONFIGDIR: /tmp/mpl
+          XDG_CACHE_HOME: /tmp
+        run: |
+          python -m experiments.extract_harvest_oversight_case \
+            --runs-csv "results/runs/harvest_invasion/curated/${{ needs.define-matrix.outputs.run_name }}_runs.csv" \
+            --generation-history-csv "results/runs/harvest_invasion/curated/${{ needs.define-matrix.outputs.run_name }}_generation_history.csv" \
+            --strategy-history-csv "results/runs/harvest_invasion/curated/${{ needs.define-matrix.outputs.run_name }}_strategy_history.csv" \
+            --output-prefix "${{ needs.define-matrix.outputs.summary_prefix }}_oversight_case"
 
       - name: Upload merged artifact bundle
         uses: actions/upload-artifact@v4
@@ -282,6 +302,11 @@ jobs:
             ${{ needs.define-matrix.outputs.summary_prefix }}_main.png
             ${{ needs.define-matrix.outputs.summary_prefix }}_mechanisms.png
             ${{ needs.define-matrix.outputs.summary_prefix }}_architecture.png
+            ${{ needs.define-matrix.outputs.summary_prefix }}_oversight_gap.png
+            ${{ needs.define-matrix.outputs.summary_prefix }}_oversight_winners.png
             ${{ needs.define-matrix.outputs.summary_prefix }}_architecture_contrasts.png
             ${{ needs.define-matrix.outputs.summary_prefix }}_capability_ladder.png
             ${{ needs.define-matrix.outputs.summary_prefix }}_welfare_incidence.png
+            ${{ needs.define-matrix.outputs.summary_prefix }}_oversight_case_trace.csv
+            ${{ needs.define-matrix.outputs.summary_prefix }}_oversight_case_trace.png
+            ${{ needs.define-matrix.outputs.summary_prefix }}_oversight_case_summary.md

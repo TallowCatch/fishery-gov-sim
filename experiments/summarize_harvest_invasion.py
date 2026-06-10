@@ -26,6 +26,11 @@ SUMMARY_METRICS = [
     "test_mean_patch_variance_mean",
     "test_mean_requested_harvest_mean",
     "test_mean_realized_harvest_mean",
+    "test_local_safe_action_fraction_mean",
+    "test_all_local_safe_step_fraction_mean",
+    "test_global_unsafe_rate_mean",
+    "test_local_pass_global_fail_rate_mean",
+    "test_time_to_first_global_unsafe_mean",
     "time_to_garden_failure",
     "first_generation_test_failure_ge_0_8",
     "per_regime_health_survival_over_generations_mean",
@@ -52,6 +57,9 @@ PAIR_METRICS = [
     "test_delayed_intervention_count_mean",
     "test_governance_budget_spent_mean",
     "test_mean_prevented_harvest_mean",
+    "test_global_unsafe_rate_mean",
+    "test_local_pass_global_fail_rate_mean",
+    "test_local_safe_action_fraction_mean",
 ]
 
 AGGRESSION_INCIDENT_METRICS = [
@@ -85,6 +93,9 @@ INJECTOR_ORDER = {
 OPTIONAL_CONTEXT_COLS = [
     "scenario_preset",
     "governance_friction_regime",
+    "actor_capability_level",
+    "overseer_capability_level",
+    "capability_gap",
 ]
 
 
@@ -232,25 +243,40 @@ def _build_ranking_table(table_df: pd.DataFrame) -> pd.DataFrame:
         table_df,
         ["tier", "partner_mix", "injector_mode_requested", "adversarial_pressure"],
     )
+    sort_cols: list[str] = []
+    ascending: list[bool] = []
+    for col, asc in [
+        ("test_global_unsafe_rate_mean_mean", True),
+        ("test_local_pass_global_fail_rate_mean_mean", True),
+        ("test_garden_failure_mean_mean", True),
+        ("test_mean_patch_health_mean_mean", False),
+        ("test_mean_welfare_mean_mean", False),
+    ]:
+        if col in table_df.columns:
+            sort_cols.append(col)
+            ascending.append(asc)
     for keys, gdf in table_df.groupby(group_cols, sort=True):
-        ranked = gdf.sort_values(
-            ["test_garden_failure_mean_mean", "test_mean_patch_health_mean_mean", "test_mean_welfare_mean_mean"],
-            ascending=[True, False, False],
-        ).reset_index(drop=True)
+        ranked = gdf.sort_values(sort_cols, ascending=ascending).reset_index(drop=True)
         for rank, (_, row) in enumerate(ranked.iterrows(), start=1):
-            rows.append(
-                {
-                    "tier": keys[group_cols.index("tier")],
-                    "partner_mix": keys[group_cols.index("partner_mix")],
-                    "injector_mode_requested": keys[group_cols.index("injector_mode_requested")],
-                    "adversarial_pressure": keys[group_cols.index("adversarial_pressure")],
-                    "condition": row["condition"],
-                    "rank": rank,
-                    "test_garden_failure_mean_mean": row["test_garden_failure_mean_mean"],
-                    "test_mean_patch_health_mean_mean": row["test_mean_patch_health_mean_mean"],
-                    "test_mean_welfare_mean_mean": row["test_mean_welfare_mean_mean"],
-                }
-            )
+            out = {
+                "tier": keys[group_cols.index("tier")],
+                "partner_mix": keys[group_cols.index("partner_mix")],
+                "injector_mode_requested": keys[group_cols.index("injector_mode_requested")],
+                "adversarial_pressure": keys[group_cols.index("adversarial_pressure")],
+                "condition": row["condition"],
+                "rank": rank,
+                "test_garden_failure_mean_mean": row["test_garden_failure_mean_mean"],
+                "test_mean_patch_health_mean_mean": row["test_mean_patch_health_mean_mean"],
+                "test_mean_welfare_mean_mean": row["test_mean_welfare_mean_mean"],
+            }
+            for metric in [
+                "test_global_unsafe_rate_mean_mean",
+                "test_local_pass_global_fail_rate_mean_mean",
+                "test_local_safe_action_fraction_mean_mean",
+            ]:
+                if metric in row.index:
+                    out[metric] = row[metric]
+            rows.append(out)
             for col in OPTIONAL_CONTEXT_COLS:
                 if col in row.index:
                     rows[-1][col] = row[col]
@@ -291,6 +317,7 @@ def _build_condition_delta_df(per_run_df: pd.DataFrame, pairs: list[tuple[str, s
         ["tier", "partner_mix", "injector_mode_requested", "adversarial_pressure", "run_id"],
     )
     conditions = sorted(per_run_df["condition"].dropna().astype(str).unique().tolist(), key=lambda x: (GOVERNANCE_ORDER.get(x, 999), x))
+    available_metrics = [metric for metric in PAIR_METRICS if metric in per_run_df.columns]
     rows = []
     for left_condition, right_condition in (pairs or _contrast_pairs(conditions)):
         left_df = per_run_df[per_run_df["condition"] == left_condition].copy()
@@ -303,7 +330,7 @@ def _build_condition_delta_df(per_run_df: pd.DataFrame, pairs: list[tuple[str, s
             out["left_condition"] = left_condition
             out["right_condition"] = right_condition
             out["contrast_name"] = f"{left_condition}_minus_{right_condition}"
-            for metric in PAIR_METRICS:
+            for metric in available_metrics:
                 out[f"delta__{metric}"] = float(row[f"{metric}_left"] - row[f"{metric}_right"])
             rows.append(out)
     return pd.DataFrame(rows)
@@ -371,7 +398,8 @@ def _build_paired_delta_df(per_run_df: pd.DataFrame) -> pd.DataFrame:
     base_cols = ["tier", "partner_mix", "injector_mode_requested", "adversarial_pressure", "run_id"]
     out = generic[_context_group_cols(generic, base_cols)].copy()
     for metric in PAIR_METRICS:
-        out[f"hybrid_minus_top__{metric}"] = generic[f"delta__{metric}"]
+        if f"delta__{metric}" in generic.columns:
+            out[f"hybrid_minus_top__{metric}"] = generic[f"delta__{metric}"]
     return out
 
 
@@ -629,11 +657,17 @@ def _build_capability_ladder_df(contrast_ci_df: pd.DataFrame) -> pd.DataFrame:
 def main() -> None:
     args = parse_args()
     per_run_df = pd.read_csv(args.runs_csv)
+    for col in OPTIONAL_CONTEXT_COLS:
+        if col in per_run_df.columns:
+            per_run_df[col] = per_run_df[col].fillna("")
     output_prefix = Path(args.output_prefix)
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
 
     agent_history_csv = args.agent_history_csv or _infer_agent_history_path(args.runs_csv)
     agent_history_df = _load_agent_history(agent_history_csv)
+    for col in OPTIONAL_CONTEXT_COLS:
+        if col in agent_history_df.columns:
+            agent_history_df[col] = agent_history_df[col].fillna("")
 
     table_df = _aggregate_with_ci(per_run_df)
     ranking_df = _build_ranking_table(table_df)

@@ -7,6 +7,9 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from experiments.extract_harvest_oversight_case import extract_case_from_frames
+from experiments.plot_harvest_architecture_followup import _oversight_gap_plot
+from experiments.plot_harvest_architecture_followup import _oversight_winner_map
 from experiments.run_harvest_invasion_local_shards import stage_config
 from experiments.summarize_harvest_invasion import _build_capability_ladder_df
 from experiments.summarize_harvest_invasion import _build_integrity_df
@@ -14,6 +17,7 @@ from experiments.summarize_harvest_invasion import _build_ranking_table
 from experiments.summarize_harvest_invasion import _build_welfare_incidence_outputs
 from fishery_sim.harvest import GovernmentAgent
 from fishery_sim.harvest import HarvestCommonsConfig
+from fishery_sim.harvest import HarvestStrategySpec
 from fishery_sim.harvest import SelfInterestedHarvestAgent
 from fishery_sim.harvest import run_harvest_episode
 from fishery_sim.harvest_benchmarks import get_harvest_regime_pack
@@ -65,6 +69,130 @@ def test_harvest_invasion_is_deterministic_for_random_mutation_and_search() -> N
         assert gen_a.equals(gen_b)
         assert strat_a.equals(strat_b)
         assert agent_a.equals(agent_b)
+
+
+def test_harvest_episode_reports_oversight_safety_metrics() -> None:
+    cfg = HarvestCommonsConfig(n_agents=3, horizon=4, patch_init=10.2, regen_rate=0.0, weather_noise_std=0.0, seed=5)
+    agents = [SelfInterestedHarvestAgent() for _ in range(cfg.n_agents)]
+    out = run_harvest_episode(cfg, agents, governor=None)
+    assert "local_safe_action_fraction" in out
+    assert "all_local_safe_step_fraction" in out
+    assert "global_unsafe_rate" in out
+    assert "local_pass_global_fail_rate" in out
+    assert "time_to_first_global_unsafe" in out
+    assert 0.0 <= out["local_safe_action_fraction"] <= 1.0
+    assert 0.0 <= out["global_unsafe_rate"] <= 1.0
+
+
+def test_harvest_episode_trace_records_local_pass_global_fail_case() -> None:
+    cfg = HarvestCommonsConfig(
+        n_agents=3,
+        horizon=3,
+        patch_init=10.2,
+        regen_rate=0.0,
+        weather_noise_std=0.0,
+        neighbor_externality=0.0,
+        seed=5,
+    )
+    spec = HarvestStrategySpec(
+        strategy_id="safe_local_high_joint",
+        low_patch_threshold=0.0,
+        high_patch_threshold=20.0,
+        low_harvest_frac=0.40,
+        mid_harvest_frac=0.40,
+        high_harvest_frac=0.40,
+        restraint_low=0.0,
+        restraint_high=0.0,
+        credit_request_low=0.0,
+        credit_request_high=0.0,
+        credit_offer_threshold=20.0,
+        credit_offer_amount=0.0,
+        neighbor_reciprocity_weight=0.0,
+        credit_response_weight=0.0,
+        cap_compliance_margin=0.0,
+    )
+    out = run_harvest_episode(cfg, [spec.to_agent() for _ in range(cfg.n_agents)], governor=None, record_trace=True)
+    trace_df = pd.DataFrame(out["episode_trace_rows"])
+    assert "local_pass_global_fail" in trace_df.columns
+    assert int(trace_df["local_pass_global_fail"].sum()) >= 1
+    assert float(out["local_pass_global_fail_rate"]) > 0.0
+
+
+def test_harvest_oversight_case_extractor_handles_no_matching_episode(tmp_path: Path) -> None:
+    runs_df = pd.DataFrame([{"run_id": 0, "test_seeds_per_generation": 1}])
+    generation_df = pd.DataFrame(
+        [
+            {
+                "run_id": 0,
+                "generation": 0,
+                "condition": "hybrid",
+                "tier": "medium_h1",
+                "partner_mix": "balanced",
+                "test_local_pass_global_fail_rate": 0.0,
+            }
+        ]
+    )
+    strategy_df = pd.DataFrame()
+    found = extract_case_from_frames(runs_df, generation_df, strategy_df, tmp_path / "case")
+    assert not found
+    assert (tmp_path / "case_trace.csv").exists()
+    assert (tmp_path / "case_trace.png").exists()
+    assert "No case found" in (tmp_path / "case_summary.md").read_text(encoding="utf-8")
+
+
+def test_harvest_oversight_dashboard_plots_build_from_small_summary(tmp_path: Path) -> None:
+    table_df = pd.DataFrame(
+        [
+            {
+                "actor_capability_level": "low_actor",
+                "overseer_capability_level": "strong_overseer",
+                "capability_gap": -2,
+                "condition": "bottom_up_only",
+                "test_global_unsafe_rate_mean_mean": 0.20,
+                "test_local_pass_global_fail_rate_mean_mean": 0.10,
+                "test_mean_patch_health_mean_mean": 14.0,
+            },
+            {
+                "actor_capability_level": "high_actor",
+                "overseer_capability_level": "weak_overseer",
+                "capability_gap": 2,
+                "condition": "hybrid",
+                "test_global_unsafe_rate_mean_mean": 0.12,
+                "test_local_pass_global_fail_rate_mean_mean": 0.04,
+                "test_mean_patch_health_mean_mean": 16.0,
+            },
+        ]
+    )
+    ranking_df = pd.DataFrame(
+        [
+            {
+                "scenario_preset": "community_irrigation",
+                "actor_capability_level": "low_actor",
+                "overseer_capability_level": "strong_overseer",
+                "condition": "bottom_up_only",
+                "rank": 1,
+            },
+            {
+                "scenario_preset": "community_irrigation",
+                "actor_capability_level": "high_actor",
+                "overseer_capability_level": "weak_overseer",
+                "condition": "hybrid",
+                "rank": 1,
+            },
+        ]
+    )
+    gap_path = tmp_path / "gap.png"
+    winners_path = tmp_path / "winners.png"
+    _oversight_gap_plot(table_df, gap_path)
+    _oversight_winner_map(ranking_df, winners_path)
+    assert gap_path.exists()
+    assert winners_path.exists()
+
+
+def test_search_mutation_injector_accepts_capability_search_budget() -> None:
+    injector = make_harvest_strategy_injector("search_mutation", search_candidates=12, search_eval_horizon=60)
+    assert getattr(injector, "n_candidates") == 12
+    assert getattr(injector, "eval_horizon") == 60
 
 
 def test_harvest_llm_replay_is_deterministic(tmp_path: Path) -> None:
@@ -269,6 +397,7 @@ def test_harvest_local_shard_presets_cover_reliability_and_narrow_stages() -> No
     arch_b = stage_config("architecture_stageB")
     arch_c = stage_config("architecture_stageC")
     ladder = stage_config("capability_ladder_stageB")
+    oversight = stage_config("harvest_oversight_gap_stageA")
     assert len(stage_a["explicit_cells"]) == 3
     assert stage_a["generations"] == "4"
     assert stage_a["seeds_per_generation"] == "8"
@@ -278,6 +407,9 @@ def test_harvest_local_shard_presets_cover_reliability_and_narrow_stages() -> No
     assert stage_c["injector_modes"] == ["llm_json"]
     assert stage_c["n_runs"] == "5"
     assert arch_b["conditions"] == ["none", "bottom_up_only", "top_down_only", "hybrid"]
+    assert oversight["scenario_presets"] == ["community_irrigation", "forest_co_management"]
+    assert oversight["actor_capability_levels"] == ["low_actor", "medium_actor", "high_actor"]
+    assert oversight["overseer_capability_levels"] == ["strong_overseer", "limited_overseer", "weak_overseer"]
     assert arch_c["injector_modes"] == ["search_mutation"]
     assert ladder["injector_modes"] == ["random", "mutation", "adversarial_heuristic", "search_mutation"]
 

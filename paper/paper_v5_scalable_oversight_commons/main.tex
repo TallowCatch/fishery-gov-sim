@@ -1,0 +1,106 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{natbib}
+\usepackage{hyperref}
+
+\title{Governance Under Capability Pressure in Multi-Agent Commons}
+\author{Ameer Alhashemi}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This paper studies oversight in interacting multi-agent systems where agents draw on a shared renewable resource. The pilot evaluates local oversight, a global oversight signal, and hybrid oversight as actor capability increases relative to overseer capability. Actor capability is operationalized through increasingly strong search-generated strategy entrants. Overseer capability is operationalized through detection, intervention capacity, delay, and budget limits. The main outcomes are global unsafe rate, local-pass/global-fail rate, resource health, welfare, and governance burden. The study provides a controlled benchmark for evaluating oversight architectures under capability pressure.
+\end{abstract}
+
+\section{Introduction}
+
+Shared-resource systems create a direct link between individual behavior and collective failure. An agent may improve its own payoff by taking more from the resource, while the same behavior becomes damaging when repeated across a population. This structure appears in classical commons problems and in computational social dilemmas, and it is increasingly relevant to multi-agent AI systems that share infrastructure, information channels, operational environments, or other limited resources.
+
+The central problem in this paper is oversight under changing agent capability. A governance rule can perform well against a fixed population, while becoming less reliable when stronger strategies enter the population. The overseer may also be limited: it may miss harmful behavior, respond late, target only part of the population, or impose a cost each time it intervenes. These conditions turn the evaluation problem from a static comparison of rules into a stress test of oversight under capability pressure.
+
+The pilot focuses on Harvest Commons as a controlled shared-resource benchmark. The experiment compares local oversight, a global oversight signal, and hybrid oversight. The main research question is:
+
+\begin{quote}
+How do oversight architectures perform in a shared-resource multi-agent benchmark as actor capability rises relative to overseer capability?
+\end{quote}
+
+\section{Existing Work and Gap}
+
+Commons scholarship emphasizes the role of rules, monitoring, enforcement, incentives, and local participation in sustaining shared resources \citep{ostrom1990governing}. Sequential social dilemma research provides computational environments for studying cooperation, depletion, and mixed incentives in temporally extended multi-agent settings \citep{leibo2017sequential, agapiou2022meltingpot}. These literatures motivate the use of renewable commons as controlled benchmarks for evaluating collective outcomes.
+
+Recent work on LLM-agent populations studies how model-generated strategies behave in social dilemmas. \citet{willis2025cooperate} prompt language models to generate complete strategies for an iterated social dilemma and then study evolutionary dynamics. \citet{willis2026hundreds} scale this idea to larger populations of model-generated strategies and examine how cultural evolution can drive collective outcomes. This line is important for the present project because it treats strategies as inspectable artifacts that can be generated, selected, and evaluated.
+
+Scalable oversight research studies supervision when the system being supervised can exceed the overseer's capability. \citet{bowman2022scalable} frame scalable oversight as an empirical problem in which a gap between task difficulty and overseer competence must be made measurable. \citet{engels2025scaling} model oversight success as a function of capability mismatch between overseer and actor. The present pilot adapts this concern to an interacting multi-agent commons setting, where stronger actors can create system-level harm through resource pressure.
+
+The gap addressed here is the architecture of oversight in a changing multi-agent population. Existing work gives tools for social dilemmas, model-generated strategies, and capability-mismatch oversight. This pilot combines these concerns by comparing oversight architectures under increasing actor capability and limited overseer capability.
+
+\section{Problem Formulation}
+
+Consider a population of agents $i \in \{1,\ldots,N\}$ interacting in a renewable commons over time $t=1,\ldots,T$. The environment state is $s_t$, including the vector of local resource levels $p_t \in \mathbb{R}^N_{\geq 0}$. Each agent chooses a requested harvest action $a_{i,t} \in [0,1]$. The joint action $a_t = (a_{1,t},\ldots,a_{N,t})$ affects the next resource state through a transition function
+\[
+    s_{t+1} \sim P(s_{t+1} \mid s_t, a_t, g_t),
+\]
+where $g_t$ denotes any active oversight intervention.
+
+An oversight architecture $G$ maps observations of the system to guidance or intervention:
+\[
+    g_t = G(o_t; \theta_G),
+\]
+where $o_t$ is the overseer's observation and $\theta_G$ contains detection, delay, targeting, and cost parameters. The pilot compares four settings: no oversight, local oversight, a global oversight signal, and hybrid oversight.
+
+Actor capability is represented by a rank $c_A \in \{0,1,2\}$ determined by the strength of the entrant-generation process. Low capability uses ordinary mutation entrants. Medium and high capability use search-generated entrants with increasing candidate counts and evaluation horizons. Overseer capability is represented by a rank $c_O \in \{0,1,2\}$ determined by detection recall, enforcement delay, targeting capacity, and budget cost. The capability gap is
+\[
+    \Delta c = c_A - c_O.
+\]
+Positive values indicate that the actor side has higher operational capability than the overseer under this benchmark definition.
+
+The local safety predicate checks whether each requested action is locally acceptable:
+\[
+    L_{i,t} = \mathbf{1}\{a_{i,t} \leq a_{\mathrm{sust}} + \epsilon\}.
+\]
+The global safety predicate checks whether the next system state remains safe:
+\[
+    H_t = \mathbf{1}\{\bar{p}_{t+1} \geq \tau_p \ \land\ f_{t+1} < \tau_f\},
+\]
+where $\bar{p}_{t+1}$ is mean patch health and $f_{t+1}$ is the failed-patch fraction. The main compositional failure metric is the local-pass/global-fail rate:
+\[
+    \frac{1}{T}\sum_{t=1}^T \mathbf{1}\left\{\left(\prod_{i=1}^N L_{i,t}=1\right) \land H_t=0\right\}.
+\]
+This metric captures cases where all local checks pass while the aggregate system becomes unsafe.
+
+\section{Method}
+
+The pilot uses Harvest Commons as a wrapper around the existing shared-resource simulation. The public-facing architecture labels are local oversight, global signal, and hybrid oversight. Local oversight refers to mechanisms acting through local interaction and local response. The global signal refers to system-level guidance or intervention. Hybrid oversight combines the two.
+
+The pilot keeps the strategy representation structured. Strategies are parameterized policies with thresholds, harvest fractions, communication behavior, credit behavior, neighbor response, and cap-compliance behavior. Search-generated strategies are produced by sampling multiple mutated candidates and selecting the strongest candidate under internal evaluation. This gives a controlled operational measure of actor capability while preserving inspectability.
+
+The overseer is varied through three regimes. A strong overseer has complete detection, no delay, full targeting capacity, and no intervention cost. A limited overseer has partial detection, one-step delay, partial targeting capacity, and a small budget cost. A weak overseer has lower detection, longer delay, lower targeting capacity, and higher cost.
+
+Two stress settings are used in the first pilot. The moderate-coupling commons setting and high-coupling commons setting reuse existing Harvest presets internally. The public interpretation is based on interaction stress rather than field calibration.
+
+\section{Pilot Design}
+
+The Stage A pilot runs a fixed-seed matrix over stress setting, oversight architecture, actor capability, and overseer capability. The conditions are no oversight, local oversight, global signal, and hybrid oversight. Actor capability has low, medium, and high settings. Overseer capability has strong, limited, and weak settings. Each cell is run with five seeds, fifteen generations, a population size of six, and fixed training and test seed counts.
+
+The primary outcomes are global unsafe rate, local-pass/global-fail rate, garden failure rate, mean patch health, neighborhood overharvest, welfare, governance burden, missed-target rate, and delayed-intervention count. The main figures are a capability-gap dashboard, a concrete episode trace, and an architecture winner map.
+
+\section{Planned Analysis}
+
+The main analysis groups results by capability gap. The first question is whether global unsafe rate or local-pass/global-fail rate increases as actor capability rises relative to overseer capability. The second question is whether local oversight, global signal, and hybrid oversight separate in high-gap settings. The third question is how safety improvements trade off against welfare and governance burden.
+
+The concrete episode trace is included to make the failure mode visible at the episode level. It reports requested harvest, local safety pass, mean patch health, failed-patch fraction, global unsafe flag, and active oversight condition.
+
+\section{Discussion}
+
+The pilot is a controlled benchmark for oversight architecture under capability pressure. It does not require live LLM agents in the first stage. LLM-generated strategy banks are a later extension once the scalable-oversight formulation is established with a clean capability variable. The long-term direction is to move from structured/search-generated strategies to model-generated strategy populations and then to direct capability-mismatch tasks where actor and overseer capability can be varied separately.
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}

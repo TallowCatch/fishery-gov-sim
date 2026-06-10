@@ -991,6 +991,8 @@ class LLMJSONHarvestStrategyInjector:
 def make_harvest_strategy_injector(
     injector_mode: str,
     llm_client: PolicyLLMClient | None = None,
+    search_candidates: int | None = None,
+    search_eval_horizon: int | None = None,
 ) -> HarvestStrategyInjector:
     mode = injector_mode.strip().lower()
     if mode == "random":
@@ -1000,7 +1002,10 @@ def make_harvest_strategy_injector(
     if mode == "adversarial_heuristic":
         return AdversarialHeuristicHarvestStrategyInjector()
     if mode == "search_mutation":
-        return SearchMutationHarvestStrategyInjector()
+        return SearchMutationHarvestStrategyInjector(
+            n_candidates=6 if search_candidates is None or int(search_candidates) <= 0 else int(search_candidates),
+            eval_horizon=30 if search_eval_horizon is None or int(search_eval_horizon) <= 0 else int(search_eval_horizon),
+        )
     if mode == "llm_json":
         return LLMJSONHarvestStrategyInjector(llm_client=llm_client)
     raise ValueError(f"Unknown Harvest injector_mode: {injector_mode}")
@@ -1122,6 +1127,11 @@ def _summarize_episode_df(episode_df: pd.DataFrame, prefix: str) -> dict[str, fl
         f"{prefix}_mean_requested_harvest": float(episode_df["mean_requested_harvest"].mean()),
         f"{prefix}_mean_realized_harvest": float(episode_df["mean_realized_harvest"].mean()),
         f"{prefix}_mean_time_to_garden_failure": float(episode_df["time_to_garden_failure"].mean()),
+        f"{prefix}_local_safe_action_fraction": float(episode_df["local_safe_action_fraction"].mean()),
+        f"{prefix}_all_local_safe_step_fraction": float(episode_df["all_local_safe_step_fraction"].mean()),
+        f"{prefix}_global_unsafe_rate": float(episode_df["global_unsafe_rate"].mean()),
+        f"{prefix}_local_pass_global_fail_rate": float(episode_df["local_pass_global_fail_rate"].mean()),
+        f"{prefix}_time_to_first_global_unsafe": float(episode_df["time_to_first_global_unsafe"].mean()),
     }
 
 
@@ -1178,6 +1188,11 @@ def evaluate_harvest_population(
                 "mean_patch_variance": out["mean_patch_variance"],
                 "mean_requested_harvest": out["mean_requested_harvest"],
                 "mean_realized_harvest": out["mean_realized_harvest"],
+                "local_safe_action_fraction": out["local_safe_action_fraction"],
+                "all_local_safe_step_fraction": out["all_local_safe_step_fraction"],
+                "global_unsafe_rate": out["global_unsafe_rate"],
+                "local_pass_global_fail_rate": out["local_pass_global_fail_rate"],
+                "time_to_first_global_unsafe": out["time_to_first_global_unsafe"],
             }
         )
         for agent_row in out.get("agent_episode_rows", []):

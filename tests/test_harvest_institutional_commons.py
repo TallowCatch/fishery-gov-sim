@@ -4,11 +4,18 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from experiments.harvest_oversight_reporting import condition_label
+from experiments.harvest_oversight_reporting import scenario_label
 from experiments.summarize_harvest_invasion import _aggregate_with_ci
 from fishery_sim.harvest import GovernmentAgent
+from fishery_sim.harvest import harvest_global_safe
+from fishery_sim.harvest import harvest_local_safety_mask
 from fishery_sim.harvest_benchmarks import (
+    get_harvest_actor_capability_preset,
     get_harvest_governance_friction_regime,
+    get_harvest_overseer_capability_preset,
     get_harvest_scenario_preset,
+    harvest_capability_gap,
     make_harvest_cfg_for_scenario,
     make_harvest_cfg_for_tier,
 )
@@ -53,6 +60,55 @@ def test_governance_friction_regimes_match_plan_defaults() -> None:
     assert constrained["enforcement_delay_rounds"] == 1
     assert constrained["max_target_share"] == 0.5
     assert constrained["governance_budget_cost"] == 0.02
+
+
+def test_harvest_oversight_capability_presets_match_stage_a_plan() -> None:
+    low = get_harvest_actor_capability_preset("low_actor")
+    medium = get_harvest_actor_capability_preset("medium_actor")
+    high = get_harvest_actor_capability_preset("high_actor")
+    weak = get_harvest_overseer_capability_preset("weak_overseer")
+    strong = get_harvest_overseer_capability_preset("strong_overseer")
+
+    assert low["injector_mode"] == "mutation"
+    assert low["rank"] == 0
+    assert medium["injector_mode"] == "search_mutation"
+    assert medium["search_candidates"] == 6
+    assert medium["search_eval_horizon"] == 30
+    assert high["search_candidates"] == 12
+    assert high["search_eval_horizon"] == 60
+    assert weak["detection_recall"] == 0.5
+    assert weak["enforcement_delay_rounds"] == 2
+    assert strong["max_target_share"] == 1.0
+    assert harvest_capability_gap("high_actor", "weak_overseer") == 2
+    assert harvest_capability_gap("low_actor", "strong_overseer") == -2
+
+
+def test_harvest_public_reporting_labels_hide_internal_names() -> None:
+    assert condition_label("bottom_up_only") == "Local oversight"
+    assert condition_label("top_down_only") == "Global signal"
+    assert condition_label("hybrid") == "Hybrid oversight"
+    assert scenario_label("community_irrigation") == "Moderate-coupling commons"
+    assert scenario_label("forest_co_management") == "High-coupling commons"
+
+
+def test_harvest_oversight_safety_predicates_count_compositional_failure() -> None:
+    requested = np.array([0.38, 0.39, 0.40], dtype=float)
+    local_mask = harvest_local_safety_mask(requested, sustainable_harvest_frac=0.35)
+    assert local_mask.tolist() == [True, True, True]
+
+    globally_safe = harvest_global_safe(
+        np.array([11.0, 10.5, 10.2], dtype=float),
+        local_patch_failure_threshold=4.0,
+        failure_fraction_threshold=0.5,
+    )
+    globally_unsafe = harvest_global_safe(
+        np.array([9.0, 10.4, 10.1], dtype=float),
+        local_patch_failure_threshold=4.0,
+        failure_fraction_threshold=0.5,
+    )
+    assert globally_safe
+    assert not globally_unsafe
+    assert bool(np.all(local_mask)) and not globally_unsafe
 
 
 def test_bottom_up_condition_respects_scenario_comms_flags() -> None:

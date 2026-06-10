@@ -5,9 +5,12 @@ import subprocess
 from datetime import datetime, timezone
 
 from fishery_sim.harvest_benchmarks import (
+    get_harvest_actor_capability_preset,
     get_harvest_governance_friction_regime,
+    get_harvest_overseer_capability_preset,
     get_harvest_regime_pack,
     get_harvest_scenario_preset,
+    harvest_capability_gap,
     make_harvest_cfg_for_scenario,
     make_harvest_cfg_for_tier,
 )
@@ -39,6 +42,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--partner-mix", choices=["cooperative_heavy", "balanced", "adversarial_heavy"], default="balanced")
     parser.add_argument("--rng-seed", type=int, default=0)
     parser.add_argument("--injector-mode", choices=["random", "mutation", "adversarial_heuristic", "search_mutation", "llm_json"], default="mutation")
+    parser.add_argument("--actor-capability-level", choices=["", "low_actor", "medium_actor", "high_actor"], default="")
+    parser.add_argument("--overseer-capability-level", choices=["", "weak_overseer", "limited_overseer", "strong_overseer"], default="")
+    parser.add_argument("--search-candidates", type=int, default=0)
+    parser.add_argument("--search-eval-horizon", type=int, default=0)
     parser.add_argument("--llm-policy-replay-file", default=None)
     parser.add_argument("--llm-provider", choices=["openai", "ollama"], default="ollama")
     parser.add_argument("--llm-model", default="qwen2.5:3b-instruct")
@@ -113,6 +120,22 @@ def _write_manifest(
 
 def main() -> None:
     args = parse_args()
+    actor_rank = ""
+    overseer_rank = ""
+    capability_gap = ""
+    if args.actor_capability_level:
+        actor_preset = get_harvest_actor_capability_preset(args.actor_capability_level)
+        args.injector_mode = str(actor_preset["injector_mode"])
+        args.adversarial_pressure = float(actor_preset["adversarial_pressure"])
+        if args.search_candidates <= 0:
+            args.search_candidates = int(actor_preset["search_candidates"])
+        if args.search_eval_horizon <= 0:
+            args.search_eval_horizon = int(actor_preset["search_eval_horizon"])
+        actor_rank = int(actor_preset["rank"])
+    if args.overseer_capability_level:
+        overseer_preset = get_harvest_overseer_capability_preset(args.overseer_capability_level)
+        overseer_rank = int(overseer_preset["rank"])
+        capability_gap = harvest_capability_gap(args.actor_capability_level or "low_actor", args.overseer_capability_level)
     scenario_preset = get_harvest_scenario_preset(args.scenario_preset) if args.scenario_preset else None
     resolved_tier = str(scenario_preset["tier"]) if scenario_preset is not None else args.tier
     resolved_partner_mix = str(scenario_preset["partner_mix"]) if scenario_preset is not None else args.partner_mix
@@ -151,7 +174,12 @@ def main() -> None:
             )
         else:
             raise ValueError(f"Unsupported llm provider: {args.llm_provider}")
-    injector = make_harvest_strategy_injector(args.injector_mode, llm_client=llm_client)
+    injector = make_harvest_strategy_injector(
+        args.injector_mode,
+        llm_client=llm_client,
+        search_candidates=args.search_candidates,
+        search_eval_horizon=args.search_eval_horizon,
+    )
     test_regimes = get_harvest_regime_pack(resolved_tier)
     government_params = {
         "trigger": args.government_trigger,
@@ -165,6 +193,20 @@ def main() -> None:
         "local_neighborhood_trigger": args.local_neighborhood_trigger,
     }
     government_params.update(get_harvest_governance_friction_regime(args.governance_friction_regime))
+    if args.overseer_capability_level:
+        government_params.update(
+            {
+                key: value
+                for key, value in get_harvest_overseer_capability_preset(args.overseer_capability_level).items()
+                if key
+                in {
+                    "detection_recall",
+                    "enforcement_delay_rounds",
+                    "max_target_share",
+                    "governance_budget_cost",
+                }
+            }
+        )
 
     output_dir = os.path.dirname(args.output_prefix)
     if output_dir:
@@ -229,6 +271,20 @@ def main() -> None:
     strategy_df["scenario_preset"] = args.scenario_preset or ""
     generation_df["governance_friction_regime"] = args.governance_friction_regime
     strategy_df["governance_friction_regime"] = args.governance_friction_regime
+    generation_df["actor_capability_level"] = args.actor_capability_level
+    strategy_df["actor_capability_level"] = args.actor_capability_level
+    generation_df["overseer_capability_level"] = args.overseer_capability_level
+    strategy_df["overseer_capability_level"] = args.overseer_capability_level
+    generation_df["actor_capability_rank"] = actor_rank
+    strategy_df["actor_capability_rank"] = actor_rank
+    generation_df["overseer_capability_rank"] = overseer_rank
+    strategy_df["overseer_capability_rank"] = overseer_rank
+    generation_df["capability_gap"] = capability_gap
+    strategy_df["capability_gap"] = capability_gap
+    generation_df["search_candidates"] = int(args.search_candidates)
+    strategy_df["search_candidates"] = int(args.search_candidates)
+    generation_df["search_eval_horizon"] = int(args.search_eval_horizon)
+    strategy_df["search_eval_horizon"] = int(args.search_eval_horizon)
     agent_history_df["experiment_tag"] = args.experiment_tag
     agent_history_df["tier"] = resolved_tier
     agent_history_df["condition"] = args.condition
@@ -238,6 +294,13 @@ def main() -> None:
     agent_history_df["llm_model"] = args.llm_model if args.injector_mode == "llm_json" else ""
     agent_history_df["scenario_preset"] = args.scenario_preset or ""
     agent_history_df["governance_friction_regime"] = args.governance_friction_regime
+    agent_history_df["actor_capability_level"] = args.actor_capability_level
+    agent_history_df["overseer_capability_level"] = args.overseer_capability_level
+    agent_history_df["actor_capability_rank"] = actor_rank
+    agent_history_df["overseer_capability_rank"] = overseer_rank
+    agent_history_df["capability_gap"] = capability_gap
+    agent_history_df["search_candidates"] = int(args.search_candidates)
+    agent_history_df["search_eval_horizon"] = int(args.search_eval_horizon)
 
     generation_path = f"{args.output_prefix}_generations.csv"
     strategy_path = f"{args.output_prefix}_strategies.csv"

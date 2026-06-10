@@ -402,10 +402,33 @@ def _neighbors(i: int, n_agents: int) -> list[int]:
     return [((i - 1) % n_agents), ((i + 1) % n_agents)]
 
 
+def harvest_local_safety_mask(requested_fracs: np.ndarray, sustainable_harvest_frac: float) -> np.ndarray:
+    threshold = float(sustainable_harvest_frac) + 0.05
+    return np.asarray(requested_fracs, dtype=float) <= threshold + 1e-12
+
+
+def harvest_global_safe(
+    next_patch_health: np.ndarray,
+    *,
+    min_mean_patch_health: float = 10.0,
+    local_patch_failure_threshold: float,
+    failure_fraction_threshold: float,
+) -> bool:
+    patch_health = np.asarray(next_patch_health, dtype=float)
+    if patch_health.size == 0:
+        return False
+    failed_fraction = float(np.mean(patch_health < float(local_patch_failure_threshold)))
+    return bool(
+        float(np.mean(patch_health)) >= float(min_mean_patch_health)
+        and failed_fraction < float(failure_fraction_threshold)
+    )
+
+
 def run_harvest_episode(
     cfg: HarvestCommonsConfig,
     agents: list[BaseHarvestAgent],
     governor: GovernmentAgent | None = None,
+    record_trace: bool = False,
 ) -> dict:
     if len(agents) != cfg.n_agents:
         raise ValueError("agents list must match cfg.n_agents")
@@ -440,6 +463,12 @@ def run_harvest_episode(
     governance_budget_trace: list[float] = []
     requested_harvest_trace: list[float] = []
     realized_harvest_trace: list[float] = []
+    local_safe_action_fraction_trace: list[float] = []
+    all_local_safe_step_trace: list[float] = []
+    global_unsafe_trace: list[float] = []
+    local_pass_global_fail_trace: list[float] = []
+    first_global_unsafe_step = cfg.horizon
+    trace_rows: list[dict] = []
 
     final_payoffs = np.zeros(cfg.n_agents, dtype=float)
     aggressive_threshold = governor.aggressive_request_threshold if governor is not None else 0.75
@@ -451,6 +480,7 @@ def run_harvest_episode(
     targeted_step_total = np.zeros(cfg.n_agents, dtype=float)
     capped_step_total = np.zeros(cfg.n_agents, dtype=float)
     aggressive_request_step_total = np.zeros(cfg.n_agents, dtype=float)
+    local_safe_step_total = np.zeros(cfg.n_agents, dtype=float)
     credit_sent_total = np.zeros(cfg.n_agents, dtype=float)
     credit_received_total = np.zeros(cfg.n_agents, dtype=float)
 
@@ -503,6 +533,11 @@ def run_harvest_episode(
             )
 
         requested_fracs_arr = np.asarray(requested_fracs, dtype=float)
+        local_safe_mask = harvest_local_safety_mask(requested_fracs_arr, cfg.sustainable_harvest_frac)
+        all_local_safe = bool(np.all(local_safe_mask)) if local_safe_mask.size else False
+        local_safe_action_fraction_trace.append(float(np.mean(local_safe_mask)) if local_safe_mask.size else 0.0)
+        all_local_safe_step_trace.append(float(all_local_safe))
+        local_safe_step_total += local_safe_mask.astype(float)
         if governor is not None:
             capped_fracs_arr, targeted_mask = governor.apply_cap(requested_fracs_arr, government_cap_fracs)
         else:
@@ -568,6 +603,42 @@ def run_harvest_episode(
             growth = cfg.regen_rate * remaining * (1.0 - remaining / cfg.patch_max)
             weather = rng.normal(0.0, cfg.weather_noise_std)
             next_health[i] = float(np.clip(remaining + max(0.0, growth) + weather, 0.0, cfg.patch_max))
+        global_safe = harvest_global_safe(
+            next_health,
+            min_mean_patch_health=10.0,
+            local_patch_failure_threshold=cfg.local_patch_failure_threshold,
+            failure_fraction_threshold=cfg.failure_fraction_threshold,
+        )
+        failed_patch_fraction = float(np.mean(next_health < cfg.local_patch_failure_threshold))
+        global_unsafe = not global_safe
+        if global_unsafe and first_global_unsafe_step == cfg.horizon:
+            first_global_unsafe_step = t + 1
+        global_unsafe_trace.append(float(global_unsafe))
+        local_pass_global_fail_trace.append(float(all_local_safe and global_unsafe))
+        if record_trace:
+            active_caps = (
+                government_cap_fracs[~np.isnan(government_cap_fracs)]
+                if government_cap_fracs is not None
+                else np.asarray([], dtype=float)
+            )
+            trace_rows.append(
+                {
+                    "step": t,
+                    "mean_patch_health_before": float(np.mean(patch_health)),
+                    "mean_patch_health_after": float(np.mean(next_health)),
+                    "failed_patch_fraction_after": failed_patch_fraction,
+                    "mean_requested_harvest": float(np.sum(requested_fracs_arr) * cfg.max_harvest_per_agent),
+                    "mean_realized_harvest": float(np.sum(harvests)),
+                    "local_safe_action_fraction": float(np.mean(local_safe_mask)) if local_safe_mask.size else 0.0,
+                    "all_local_safe": int(all_local_safe),
+                    "global_unsafe": int(global_unsafe),
+                    "local_pass_global_fail": int(all_local_safe and global_unsafe),
+                    "active_cap_fraction": float(np.mean(active_caps)) if active_caps.size else -1.0,
+                    "targeted_agent_fraction": float(np.mean(targeted_mask)) if targeted_mask.size else 0.0,
+                    "missed_target_rate": float(missed_targets / intended_targets) if intended_targets > 0 else 0.0,
+                    "governance_budget_spent": float(governance_budget_spent),
+                }
+            )
 
         per_target_budget_cost = float(getattr(governor, "governance_budget_cost", 0.0)) if governor is not None else 0.0
         payoffs = harvests + credits_received - credit_costs - per_target_budget_cost * targeted_mask.astype(float)
@@ -623,6 +694,12 @@ def run_harvest_episode(
         "mean_patch_variance": float(np.mean(patch_variance_trace)) if patch_variance_trace else 0.0,
         "mean_requested_harvest": float(np.mean(requested_harvest_trace)) if requested_harvest_trace else 0.0,
         "mean_realized_harvest": float(np.mean(realized_harvest_trace)) if realized_harvest_trace else 0.0,
+        "local_safe_action_fraction": float(np.mean(local_safe_action_fraction_trace)) if local_safe_action_fraction_trace else 0.0,
+        "all_local_safe_step_fraction": float(np.mean(all_local_safe_step_trace)) if all_local_safe_step_trace else 0.0,
+        "global_unsafe_rate": float(np.mean(global_unsafe_trace)) if global_unsafe_trace else 0.0,
+        "local_pass_global_fail_rate": float(np.mean(local_pass_global_fail_trace)) if local_pass_global_fail_trace else 0.0,
+        "time_to_first_global_unsafe": float(first_global_unsafe_step),
+        "episode_trace_rows": trace_rows,
         "final_payoffs": final_payoffs,
         "agent_episode_rows": [
             {
@@ -646,6 +723,7 @@ def run_harvest_episode(
                 "mean_credit_received": float(credit_received_total[i] / max(1, t_end)),
                 "mean_local_patch_health": float(observed_patch_sum[i] / max(1, t_end)),
                 "final_local_patch_health": float(patch_health[i]),
+                "local_safe_action_fraction": float(local_safe_step_total[i] / max(1, t_end)),
             }
             for i in range(cfg.n_agents)
         ],

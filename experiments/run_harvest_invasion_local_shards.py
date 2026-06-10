@@ -5,11 +5,13 @@ import sys
 from pathlib import Path
 
 try:
+    from experiments.harvest_invasion_presets import _cell_slug
     from experiments.harvest_invasion_presets import shard_slug
     from experiments.harvest_invasion_presets import stage_cells
     from experiments.harvest_invasion_presets import stage_config
     from experiments.harvest_invasion_presets import stage_names
 except ModuleNotFoundError:  # pragma: no cover
+    from harvest_invasion_presets import _cell_slug
     from harvest_invasion_presets import shard_slug
     from harvest_invasion_presets import stage_cells
     from harvest_invasion_presets import stage_config
@@ -79,7 +81,7 @@ def main() -> None:
         condition = cell["condition"]
         injector_mode = cell["injector_mode"]
         pressure = cell["pressure"]
-        slug = shard_slug(
+        slug = _cell_slug(cell) if cell.get("actor_capability_level") else shard_slug(
             scenario_preset or tier,
             governance_friction_regime or partner_mix,
             condition,
@@ -108,6 +110,14 @@ def main() -> None:
             pressure,
             "--governance-friction-regimes",
             governance_friction_regime,
+            "--actor-capability-levels",
+            str(cell.get("actor_capability_level", "")),
+            "--overseer-capability-levels",
+            str(cell.get("overseer_capability_level", "")),
+            "--search-candidates",
+            str(cell.get("search_candidates", 0)),
+            "--search-eval-horizon",
+            str(cell.get("search_eval_horizon", 0)),
             "--n-runs",
             cfg["n_runs"],
             "--generations",
@@ -212,6 +222,8 @@ def main() -> None:
                     "experiments.plot_harvest_architecture_followup",
                     "--ranking-csv",
                     str(summary_prefix.with_name(summary_prefix.name + "_ranking.csv")),
+                    "--table-csv",
+                    str(summary_prefix.with_name(summary_prefix.name + "_table.csv")),
                     "--contrast-ci-csv",
                     str(summary_prefix.with_name(summary_prefix.name + "_contrast_ci.csv")),
                     "--capability-ladder-csv",

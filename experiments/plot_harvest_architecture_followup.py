@@ -9,6 +9,11 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 import numpy as np
 import pandas as pd
 
+from experiments.harvest_oversight_reporting import actor_capability_label
+from experiments.harvest_oversight_reporting import condition_label
+from experiments.harvest_oversight_reporting import overseer_capability_label
+from experiments.harvest_oversight_reporting import scenario_label
+
 
 CONDITION_COLORS = {
     "none": "#d9d9d9",
@@ -34,6 +39,7 @@ INJECTOR_LABELS = {
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot Harvest architecture follow-up outputs.")
     parser.add_argument("--ranking-csv", required=True)
+    parser.add_argument("--table-csv", default=None)
     parser.add_argument("--contrast-ci-csv", required=True)
     parser.add_argument("--capability-ladder-csv", default=None)
     parser.add_argument("--aggression-summary-csv", default=None)
@@ -48,7 +54,10 @@ def _load_optional_csv(path: str | None) -> pd.DataFrame:
     path_obj = Path(path)
     if not path_obj.exists():
         return pd.DataFrame()
-    return pd.read_csv(path_obj)
+    try:
+        return pd.read_csv(path_obj)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
 
 
 def _cell_sort_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -64,13 +73,17 @@ def _cell_sort_columns(df: pd.DataFrame) -> pd.DataFrame:
 def _cell_label(row: pd.Series) -> str:
     parts: list[str] = []
     if "scenario_preset" in row.index and pd.notna(row["scenario_preset"]) and str(row["scenario_preset"]).strip():
-        parts.append(str(row["scenario_preset"]).replace("_", " "))
+        parts.append(scenario_label(str(row["scenario_preset"])))
     if "governance_friction_regime" in row.index and pd.notna(row["governance_friction_regime"]) and str(row["governance_friction_regime"]).strip():
         parts.append(str(row["governance_friction_regime"]))
     tier = row["tier"].replace("_h1", "").replace("_", " ")
     mix = row["partner_mix"].replace("_", " ")
     parts.extend([tier, mix, f"p={row['adversarial_pressure']}"])
     return " | ".join(parts)
+
+
+def _condition_label(condition: str) -> str:
+    return condition_label(condition)
 
 
 def _architecture_effect_plot(contrast_ci_df: pd.DataFrame, output: Path) -> None:
@@ -132,6 +145,113 @@ def _architecture_effect_plot(contrast_ci_df: pd.DataFrame, output: Path) -> Non
             ax.tick_params(axis="y", left=False, labelleft=False)
     axes[0].set_ylabel("Decision cell")
     fig.suptitle("Stage C: hybrid relative to top-down-only", fontsize=12)
+    fig.savefig(output, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _oversight_gap_plot(table_df: pd.DataFrame, output: Path) -> None:
+    required = {
+        "actor_capability_level",
+        "overseer_capability_level",
+        "capability_gap",
+        "condition",
+        "test_global_unsafe_rate_mean_mean",
+        "test_local_pass_global_fail_rate_mean_mean",
+    }
+    if table_df.empty or not required.issubset(table_df.columns):
+        return
+    focus = table_df.copy()
+    focus["capability_gap"] = pd.to_numeric(focus["capability_gap"], errors="coerce")
+    focus = focus.dropna(subset=["capability_gap"]).copy()
+    if focus.empty:
+        return
+    grouped = (
+        focus.groupby(["capability_gap", "condition"], as_index=False)
+        .agg(
+            global_unsafe=("test_global_unsafe_rate_mean_mean", "mean"),
+            local_pass_global_fail=("test_local_pass_global_fail_rate_mean_mean", "mean"),
+            patch_health=("test_mean_patch_health_mean_mean", "mean"),
+        )
+        .sort_values(["capability_gap", "condition"])
+    )
+    conditions = ["none", "bottom_up_only", "top_down_only", "hybrid"]
+    colors = {**CONDITION_COLORS}
+    fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.4), constrained_layout=True)
+    for condition in conditions:
+        cdf = grouped[grouped["condition"] == condition]
+        if cdf.empty:
+            continue
+        axes[0].plot(
+            cdf["capability_gap"],
+            cdf["global_unsafe"],
+            marker="o",
+            linewidth=1.8,
+            color=colors.get(condition, "#444444"),
+            label=_condition_label(condition),
+        )
+        axes[1].plot(
+            cdf["capability_gap"],
+            cdf["local_pass_global_fail"],
+            marker="o",
+            linewidth=1.8,
+            color=colors.get(condition, "#444444"),
+            label=_condition_label(condition),
+        )
+    for ax, title, ylabel in [
+        (axes[0], "Global unsafe rate", "Mean rate"),
+        (axes[1], "Local-pass / global-fail rate", "Mean rate"),
+    ]:
+        ax.set_title(title, fontsize=10)
+        ax.set_xlabel("Actor capability minus overseer capability")
+        ax.set_ylabel(ylabel)
+        ax.grid(alpha=0.25)
+    axes[1].legend(loc="best", fontsize=8, frameon=False)
+    fig.suptitle("Oversight performance as actor capability rises", fontsize=12)
+    fig.savefig(output, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _oversight_winner_map(ranking_df: pd.DataFrame, output: Path) -> None:
+    required = {"scenario_preset", "actor_capability_level", "overseer_capability_level", "condition", "rank"}
+    if ranking_df.empty or not required.issubset(ranking_df.columns):
+        return
+    winners = ranking_df[ranking_df["rank"] == 1].copy()
+    if winners.empty:
+        return
+    actor_order = ["low_actor", "medium_actor", "high_actor"]
+    overseer_order = ["strong_overseer", "limited_overseer", "weak_overseer"]
+    condition_order = ["none", "bottom_up_only", "top_down_only", "hybrid"]
+    condition_to_value = {condition: idx for idx, condition in enumerate(condition_order)}
+    cmap = ListedColormap([CONDITION_COLORS[c] for c in condition_order])
+    norm = BoundaryNorm(np.arange(-0.5, len(condition_order) + 0.5, 1), cmap.N)
+    scenarios = sorted(winners["scenario_preset"].dropna().astype(str).unique().tolist())
+    fig, axes = plt.subplots(1, len(scenarios), figsize=(5.2 * max(1, len(scenarios)), 4.4), constrained_layout=True)
+    axes = np.atleast_1d(axes)
+    for ax, scenario in zip(axes, scenarios):
+        sdf = winners[winners["scenario_preset"] == scenario].copy()
+        data = np.full((len(actor_order), len(overseer_order)), np.nan)
+        labels = [["" for _ in overseer_order] for _ in actor_order]
+        for _, row in sdf.iterrows():
+            if row["actor_capability_level"] not in actor_order or row["overseer_capability_level"] not in overseer_order:
+                continue
+            i = actor_order.index(row["actor_capability_level"])
+            j = overseer_order.index(row["overseer_capability_level"])
+            condition = str(row["condition"])
+            data[i, j] = condition_to_value.get(condition, np.nan)
+            labels[i][j] = _condition_label(condition)
+        ax.imshow(data, aspect="auto", cmap=cmap, norm=norm)
+        ax.set_title(scenario_label(scenario), fontsize=10)
+        ax.set_xticks(np.arange(len(overseer_order)))
+        ax.set_xticklabels([overseer_capability_label(x).replace(" overseer", "") for x in overseer_order], rotation=20, ha="right", fontsize=8)
+        ax.set_yticks(np.arange(len(actor_order)))
+        ax.set_yticklabels([actor_capability_label(x).replace(" actor capability", "") for x in actor_order], fontsize=8)
+        ax.set_xlabel("Overseer capability")
+        ax.set_ylabel("Actor capability")
+        for i in range(len(actor_order)):
+            for j in range(len(overseer_order)):
+                if labels[i][j]:
+                    ax.text(j, i, labels[i][j], ha="center", va="center", fontsize=7, color="black")
+    fig.suptitle("Top-ranked oversight architecture", fontsize=12)
     fig.savefig(output, dpi=180, bbox_inches="tight")
     plt.close(fig)
 
@@ -293,13 +413,16 @@ def _incidence_plot(aggression_df: pd.DataFrame, targeting_df: pd.DataFrame, out
 def main() -> None:
     args = parse_args()
     prefix = Path(args.output_prefix)
-    ranking_df = pd.read_csv(args.ranking_csv)
-    contrast_ci_df = pd.read_csv(args.contrast_ci_csv)
+    ranking_df = _load_optional_csv(args.ranking_csv)
+    table_df = _load_optional_csv(args.table_csv)
+    contrast_ci_df = _load_optional_csv(args.contrast_ci_csv)
     ladder_df = _load_optional_csv(args.capability_ladder_csv)
     aggression_df = _load_optional_csv(args.aggression_summary_csv)
     targeting_df = _load_optional_csv(args.targeting_summary_csv)
 
     _architecture_effect_plot(contrast_ci_df, prefix.with_name(prefix.name + "_architecture.png"))
+    _oversight_gap_plot(table_df, prefix.with_name(prefix.name + "_oversight_gap.png"))
+    _oversight_winner_map(ranking_df, prefix.with_name(prefix.name + "_oversight_winners.png"))
     _contrast_bars(contrast_ci_df, prefix.with_name(prefix.name + "_architecture_contrasts.png"))
     _capability_ladder_plot(ladder_df, prefix.with_name(prefix.name + "_capability_ladder.png"))
     _incidence_plot(aggression_df, targeting_df, prefix.with_name(prefix.name + "_welfare_incidence.png"))

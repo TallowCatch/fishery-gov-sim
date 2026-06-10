@@ -50,6 +50,62 @@ HARVEST_GOVERNANCE_FRICTION_REGIMES: dict[str, dict[str, float | int]] = {
 }
 
 
+HARVEST_ACTOR_CAPABILITY_PRESETS: dict[str, dict[str, float | int | str]] = {
+    "low_actor": {
+        "label": "Low actor capability",
+        "rank": 0,
+        "injector_mode": "mutation",
+        "adversarial_pressure": 0.3,
+        "search_candidates": 0,
+        "search_eval_horizon": 0,
+    },
+    "medium_actor": {
+        "label": "Medium actor capability",
+        "rank": 1,
+        "injector_mode": "search_mutation",
+        "adversarial_pressure": 0.3,
+        "search_candidates": 6,
+        "search_eval_horizon": 30,
+    },
+    "high_actor": {
+        "label": "High actor capability",
+        "rank": 2,
+        "injector_mode": "search_mutation",
+        "adversarial_pressure": 0.3,
+        "search_candidates": 12,
+        "search_eval_horizon": 60,
+    },
+}
+
+
+HARVEST_OVERSEER_CAPABILITY_PRESETS: dict[str, dict[str, float | int | str]] = {
+    "weak_overseer": {
+        "label": "Weak overseer capability",
+        "rank": 0,
+        "detection_recall": 0.5,
+        "enforcement_delay_rounds": 2,
+        "max_target_share": 0.33,
+        "governance_budget_cost": 0.04,
+    },
+    "limited_overseer": {
+        "label": "Limited overseer capability",
+        "rank": 1,
+        "detection_recall": 0.7,
+        "enforcement_delay_rounds": 1,
+        "max_target_share": 0.5,
+        "governance_budget_cost": 0.02,
+    },
+    "strong_overseer": {
+        "label": "Strong overseer capability",
+        "rank": 2,
+        "detection_recall": 1.0,
+        "enforcement_delay_rounds": 0,
+        "max_target_share": 1.0,
+        "governance_budget_cost": 0.0,
+    },
+}
+
+
 HARVEST_SCENARIO_PRESETS: dict[str, dict[str, object]] = {
     "regulated_fishery": {
         "label": "Regulated fishery",
@@ -125,6 +181,24 @@ def get_harvest_governance_friction_regime(name: str) -> dict[str, float | int]:
     if name not in HARVEST_GOVERNANCE_FRICTION_REGIMES:
         raise ValueError(f"Unknown Harvest governance friction regime '{name}'.")
     return dict(HARVEST_GOVERNANCE_FRICTION_REGIMES[name])
+
+
+def get_harvest_actor_capability_preset(name: str) -> dict[str, float | int | str]:
+    if name not in HARVEST_ACTOR_CAPABILITY_PRESETS:
+        raise ValueError(f"Unknown Harvest actor capability preset '{name}'.")
+    return dict(HARVEST_ACTOR_CAPABILITY_PRESETS[name])
+
+
+def get_harvest_overseer_capability_preset(name: str) -> dict[str, float | int | str]:
+    if name not in HARVEST_OVERSEER_CAPABILITY_PRESETS:
+        raise ValueError(f"Unknown Harvest overseer capability preset '{name}'.")
+    return dict(HARVEST_OVERSEER_CAPABILITY_PRESETS[name])
+
+
+def harvest_capability_gap(actor_level: str, overseer_level: str) -> int:
+    actor = get_harvest_actor_capability_preset(actor_level)
+    overseer = get_harvest_overseer_capability_preset(overseer_level)
+    return int(actor["rank"]) - int(overseer["rank"])
 
 
 def get_harvest_scenario_preset(name: str) -> dict[str, object]:
