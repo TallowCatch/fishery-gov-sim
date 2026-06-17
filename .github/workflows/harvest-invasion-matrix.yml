@@ -12,6 +12,8 @@ on:
       - codex/harvest-institutional-community-irrigation
       - codex/harvest-institutional-forest-co-management
       - codex/harvest-oversight-gap-stagea
+    paths-ignore:
+      - ".github/threshold_replay_request.json"
   workflow_dispatch:
     inputs:
       stage:
