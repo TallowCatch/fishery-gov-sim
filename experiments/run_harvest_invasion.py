@@ -41,6 +41,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--adversarial-pressure", type=float, default=0.3)
     parser.add_argument("--partner-mix", choices=["cooperative_heavy", "balanced", "adversarial_heavy"], default="balanced")
     parser.add_argument("--rng-seed", type=int, default=0)
+    parser.add_argument("--local-safety-margin", type=float, default=0.05)
+    parser.add_argument("--global-min-mean-patch-health", type=float, default=10.0)
     parser.add_argument("--injector-mode", choices=["random", "mutation", "adversarial_heuristic", "search_mutation", "llm_json"], default="mutation")
     parser.add_argument("--actor-capability-level", choices=["", "low_actor", "medium_actor", "high_actor"], default="")
     parser.add_argument("--overseer-capability-level", choices=["", "weak_overseer", "limited_overseer", "strong_overseer"], default="")
@@ -147,6 +149,8 @@ def main() -> None:
         )
     else:
         cfg = make_harvest_cfg_for_tier(args.tier, n_agents=args.population_size)
+    cfg.local_safety_margin = float(args.local_safety_margin)
+    cfg.global_min_mean_patch_health = float(args.global_min_mean_patch_health)
     llm_client = None
     if args.llm_policy_replay_file:
         llm_client = FileReplayPolicyLLMClient(path=args.llm_policy_replay_file)

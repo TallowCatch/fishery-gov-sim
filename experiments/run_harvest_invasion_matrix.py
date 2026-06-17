@@ -56,6 +56,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rng-seed-start", type=int, default=0)
     parser.add_argument("--cfg-seed-start", type=int, default=0)
     parser.add_argument("--run-seed-stride", type=int, default=1000)
+    parser.add_argument("--local-safety-margin", type=float, default=0.05)
+    parser.add_argument("--global-min-mean-patch-health", type=float, default=10.0)
     parser.add_argument("--max-workers", type=int, default=1)
     parser.add_argument("--output-prefix", default="results/runs/harvest_invasion/harvest_invasion_matrix")
     parser.add_argument("--experiment-tag", default="harvest_invasion")
@@ -248,6 +250,8 @@ def _run_job(job: dict) -> tuple[dict, pd.DataFrame, pd.DataFrame, pd.DataFrame]
             n_agents=int(args["population_size"]),
             seed=int(args["cfg_seed_start"]) + run_id * int(args["run_seed_stride"]),
         )
+    cfg.local_safety_margin = float(args["local_safety_margin"])
+    cfg.global_min_mean_patch_health = float(args["global_min_mean_patch_health"])
     generation_df, strategy_df, agent_history_df = run_harvest_invasion(
         base_cfg=copy.deepcopy(cfg),
         condition=condition,
@@ -288,6 +292,8 @@ def _run_job(job: dict) -> tuple[dict, pd.DataFrame, pd.DataFrame, pd.DataFrame]
         capability_gap=capability_gap,
         search_candidates=search_candidates,
         search_eval_horizon=search_eval_horizon,
+        local_safety_margin=float(args["local_safety_margin"]),
+        global_min_mean_patch_health=float(args["global_min_mean_patch_health"]),
     )
     strategy_df = strategy_df.assign(
         tier=tier,
@@ -308,6 +314,8 @@ def _run_job(job: dict) -> tuple[dict, pd.DataFrame, pd.DataFrame, pd.DataFrame]
         capability_gap=capability_gap,
         search_candidates=search_candidates,
         search_eval_horizon=search_eval_horizon,
+        local_safety_margin=float(args["local_safety_margin"]),
+        global_min_mean_patch_health=float(args["global_min_mean_patch_health"]),
     )
     agent_history_df = agent_history_df.assign(
         tier=tier,
@@ -328,6 +336,8 @@ def _run_job(job: dict) -> tuple[dict, pd.DataFrame, pd.DataFrame, pd.DataFrame]
         capability_gap=capability_gap,
         search_candidates=search_candidates,
         search_eval_horizon=search_eval_horizon,
+        local_safety_margin=float(args["local_safety_margin"]),
+        global_min_mean_patch_health=float(args["global_min_mean_patch_health"]),
     )
     summary_row = _summary_from_generation_df(condition, injector_mode, run_id, generation_df)
     summary_row.update(
@@ -352,6 +362,8 @@ def _run_job(job: dict) -> tuple[dict, pd.DataFrame, pd.DataFrame, pd.DataFrame]
             "capability_gap": capability_gap,
             "search_candidates": search_candidates,
             "search_eval_horizon": search_eval_horizon,
+            "local_safety_margin": float(args["local_safety_margin"]),
+            "global_min_mean_patch_health": float(args["global_min_mean_patch_health"]),
         }
     )
     summary_row.update(_llm_integrity_summary(strategy_df))
@@ -506,6 +518,8 @@ def main() -> None:
                                             "rng_seed_start": args.rng_seed_start,
                                             "cfg_seed_start": args.cfg_seed_start,
                                             "run_seed_stride": args.run_seed_stride,
+                                            "local_safety_margin": args.local_safety_margin,
+                                            "global_min_mean_patch_health": args.global_min_mean_patch_health,
                                             "government_params": merged_government_params,
                                             "experiment_tag": args.experiment_tag,
                                             "llm_policy_replay_file": args.llm_policy_replay_file,

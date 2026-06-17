@@ -95,19 +95,30 @@ def test_harvest_oversight_safety_predicates_count_compositional_failure() -> No
     requested = np.array([0.38, 0.39, 0.40], dtype=float)
     local_mask = harvest_local_safety_mask(requested, sustainable_harvest_frac=0.35)
     assert local_mask.tolist() == [True, True, True]
+    stricter_local_mask = harvest_local_safety_mask(requested, sustainable_harvest_frac=0.35, local_safety_margin=0.0)
+    assert stricter_local_mask.tolist() == [False, False, False]
 
     globally_safe = harvest_global_safe(
         np.array([11.0, 10.5, 10.2], dtype=float),
+        min_mean_patch_health=10.0,
         local_patch_failure_threshold=4.0,
         failure_fraction_threshold=0.5,
     )
     globally_unsafe = harvest_global_safe(
         np.array([9.0, 10.4, 10.1], dtype=float),
+        min_mean_patch_health=10.0,
+        local_patch_failure_threshold=4.0,
+        failure_fraction_threshold=0.5,
+    )
+    globally_unsafe_at_stricter_threshold = harvest_global_safe(
+        np.array([10.4, 10.5, 10.6], dtype=float),
+        min_mean_patch_health=10.6,
         local_patch_failure_threshold=4.0,
         failure_fraction_threshold=0.5,
     )
     assert globally_safe
     assert not globally_unsafe
+    assert not globally_unsafe_at_stricter_threshold
     assert bool(np.all(local_mask)) and not globally_unsafe
 
 

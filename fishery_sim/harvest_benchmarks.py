@@ -103,6 +103,38 @@ HARVEST_OVERSEER_CAPABILITY_PRESETS: dict[str, dict[str, float | int | str]] = {
         "max_target_share": 1.0,
         "governance_budget_cost": 0.0,
     },
+    "recall_limited_only": {
+        "label": "Recall-limited overseer",
+        "rank": 1,
+        "detection_recall": 0.5,
+        "enforcement_delay_rounds": 0,
+        "max_target_share": 1.0,
+        "governance_budget_cost": 0.0,
+    },
+    "delay_limited_only": {
+        "label": "Delay-limited overseer",
+        "rank": 1,
+        "detection_recall": 1.0,
+        "enforcement_delay_rounds": 2,
+        "max_target_share": 1.0,
+        "governance_budget_cost": 0.0,
+    },
+    "capacity_limited_only": {
+        "label": "Capacity-limited overseer",
+        "rank": 1,
+        "detection_recall": 1.0,
+        "enforcement_delay_rounds": 0,
+        "max_target_share": 0.33,
+        "governance_budget_cost": 0.0,
+    },
+    "cost_limited_only": {
+        "label": "Cost-limited overseer",
+        "rank": 1,
+        "detection_recall": 1.0,
+        "enforcement_delay_rounds": 0,
+        "max_target_share": 1.0,
+        "governance_budget_cost": 0.04,
+    },
 }
 
 

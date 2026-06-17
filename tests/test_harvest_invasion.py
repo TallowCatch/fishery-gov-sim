@@ -114,7 +114,10 @@ def test_harvest_episode_trace_records_local_pass_global_fail_case() -> None:
     out = run_harvest_episode(cfg, [spec.to_agent() for _ in range(cfg.n_agents)], governor=None, record_trace=True)
     trace_df = pd.DataFrame(out["episode_trace_rows"])
     assert "local_pass_global_fail" in trace_df.columns
+    assert "max_requested_frac" in trace_df.columns
+    assert "mean_requested_frac" in trace_df.columns
     assert int(trace_df["local_pass_global_fail"].sum()) >= 1
+    assert np.isclose(float(trace_df["max_requested_frac"].iloc[0]), 0.40)
     assert float(out["local_pass_global_fail_rate"]) > 0.0
 
 

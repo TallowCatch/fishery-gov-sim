@@ -17,6 +17,8 @@ class HarvestCommonsConfig:
     weather_noise_std: float = 0.3
     neighbor_externality: float = 0.12
     sustainable_harvest_frac: float = 0.35
+    local_safety_margin: float = 0.05
+    global_min_mean_patch_health: float = 10.0
     max_harvest_per_agent: float = 6.0
     credit_cap: float = 1.0
     communication_enabled: bool = True
@@ -402,8 +404,12 @@ def _neighbors(i: int, n_agents: int) -> list[int]:
     return [((i - 1) % n_agents), ((i + 1) % n_agents)]
 
 
-def harvest_local_safety_mask(requested_fracs: np.ndarray, sustainable_harvest_frac: float) -> np.ndarray:
-    threshold = float(sustainable_harvest_frac) + 0.05
+def harvest_local_safety_mask(
+    requested_fracs: np.ndarray,
+    sustainable_harvest_frac: float,
+    local_safety_margin: float = 0.05,
+) -> np.ndarray:
+    threshold = float(sustainable_harvest_frac) + float(local_safety_margin)
     return np.asarray(requested_fracs, dtype=float) <= threshold + 1e-12
 
 
@@ -533,7 +539,11 @@ def run_harvest_episode(
             )
 
         requested_fracs_arr = np.asarray(requested_fracs, dtype=float)
-        local_safe_mask = harvest_local_safety_mask(requested_fracs_arr, cfg.sustainable_harvest_frac)
+        local_safe_mask = harvest_local_safety_mask(
+            requested_fracs_arr,
+            cfg.sustainable_harvest_frac,
+            cfg.local_safety_margin,
+        )
         all_local_safe = bool(np.all(local_safe_mask)) if local_safe_mask.size else False
         local_safe_action_fraction_trace.append(float(np.mean(local_safe_mask)) if local_safe_mask.size else 0.0)
         all_local_safe_step_trace.append(float(all_local_safe))
@@ -605,7 +615,7 @@ def run_harvest_episode(
             next_health[i] = float(np.clip(remaining + max(0.0, growth) + weather, 0.0, cfg.patch_max))
         global_safe = harvest_global_safe(
             next_health,
-            min_mean_patch_health=10.0,
+            min_mean_patch_health=cfg.global_min_mean_patch_health,
             local_patch_failure_threshold=cfg.local_patch_failure_threshold,
             failure_fraction_threshold=cfg.failure_fraction_threshold,
         )
@@ -629,6 +639,8 @@ def run_harvest_episode(
                     "failed_patch_fraction_after": failed_patch_fraction,
                     "mean_requested_harvest": float(np.sum(requested_fracs_arr) * cfg.max_harvest_per_agent),
                     "mean_realized_harvest": float(np.sum(harvests)),
+                    "max_requested_frac": float(np.max(requested_fracs_arr)) if requested_fracs_arr.size else 0.0,
+                    "mean_requested_frac": float(np.mean(requested_fracs_arr)) if requested_fracs_arr.size else 0.0,
                     "local_safe_action_fraction": float(np.mean(local_safe_mask)) if local_safe_mask.size else 0.0,
                     "all_local_safe": int(all_local_safe),
                     "global_unsafe": int(global_unsafe),
