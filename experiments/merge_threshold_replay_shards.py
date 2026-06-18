@@ -14,6 +14,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input-dir", required=True)
     parser.add_argument("--merged-prefix", required=True)
     parser.add_argument("--summary-csv", required=True)
+    parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help=(
+            "Merge only run-level outputs. Use this for full threshold robustness "
+            "grids where generation, strategy, and agent histories are too large "
+            "to concatenate on a GitHub Actions runner."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -36,9 +45,14 @@ def main() -> None:
     summary_csv.parent.mkdir(parents=True, exist_ok=True)
 
     runs_df = _merge(_collect_csvs(input_dir, "_runs.csv"))
-    gen_df = _merge(_collect_csvs(input_dir, "_generation_history.csv"))
-    strat_df = _merge(_collect_csvs(input_dir, "_strategy_history.csv"))
-    agent_df = _merge(_collect_csvs(input_dir, "_agent_history.csv"))
+    if args.summary_only:
+        gen_df = pd.DataFrame()
+        strat_df = pd.DataFrame()
+        agent_df = pd.DataFrame()
+    else:
+        gen_df = _merge(_collect_csvs(input_dir, "_generation_history.csv"))
+        strat_df = _merge(_collect_csvs(input_dir, "_strategy_history.csv"))
+        agent_df = _merge(_collect_csvs(input_dir, "_agent_history.csv"))
 
     if runs_df.empty:
         raise FileNotFoundError(f"No threshold replay run shards found under {input_dir}")
